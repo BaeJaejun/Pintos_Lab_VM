@@ -50,6 +50,7 @@ struct page
 
 	/* Your implementation */
 	struct hash_elem hash_elem; // spt_hash를 위해 추가
+	bool writable;				// 쓰기 여부 추가
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
@@ -67,8 +68,9 @@ struct page
 /* The representation of "frame" */
 struct frame
 {
-	void *kva;
-	struct page *page;
+	void *kva;					 // 커널 가상 주소 : 물리 메모리에 데이터가 저장되는 곳의 주소
+	struct page *page;			 // 이 프레임이 매핑되어 있는 사용자 가상 페이지
+	struct list_elem frame_elem; // frame_table을 위한 list_elem 추가
 };
 
 /* The function table for page operations.
