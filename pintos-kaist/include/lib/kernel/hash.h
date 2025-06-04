@@ -35,23 +35,30 @@ struct hash_elem {
  * name of the outer structure STRUCT and the member name MEMBER
  * of the hash element.  See the big comment at the top of the
  * file for an example. */
+/* 해시 요소 HASH_ELEM에 대한 포인터를, HASH_ELEM이 포함되어 있는 외부 구조체 STRUCT로 변환합니다.
+외부 구조체의 이름 STRUCT와 해시 요소의 멤버 이름 MEMBER를 함께 전달하세요.*/
 #define hash_entry(HASH_ELEM, STRUCT, MEMBER)                   \
 	((STRUCT *) ((uint8_t *) &(HASH_ELEM)->list_elem        \
 		- offsetof (STRUCT, MEMBER.list_elem)))
 
 /* Computes and returns the hash value for hash element E, given
  * auxiliary data AUX. */
+/* 보조 데이터 AUX가 주어진 상태에서 해시 요소 E의 해시 값을 계산하여 반환합니다.*/
 typedef uint64_t hash_hash_func (const struct hash_elem *e, void *aux);
 
 /* Compares the value of two hash elements A and B, given
  * auxiliary data AUX.  Returns true if A is less than B, or
  * false if A is greater than or equal to B. */
+/* 보조 데이터 AUX가 주어진 상태에서 두 해시 요소 A와 B의 값을 비교합니다.
+ A가 B보다 작으면 true를 반환하고, 그렇지 않거나 크거나 같으면 false를 반환합니다.*/
 typedef bool hash_less_func (const struct hash_elem *a,
 		const struct hash_elem *b,
 		void *aux);
 
 /* Performs some operation on hash element E, given auxiliary
  * data AUX. */
+/* 해시 요소 E에 대해 특정 작업을 수행합니다. AUX는 보조 데이터로,
+ * 사용자 정의 작업 함수에서 필요한 추가 정보를 전달합니다. */
 typedef void hash_action_func (struct hash_elem *e, void *aux);
 
 /* Hash table. */
@@ -72,14 +79,18 @@ struct hash_iterator {
 };
 
 /* Basic life cycle. */
-bool hash_init (struct hash *, hash_hash_func *, hash_less_func *, void *aux);
-void hash_clear (struct hash *, hash_action_func *);
-void hash_destroy (struct hash *, hash_action_func *);
+bool hash_init (struct hash *, hash_hash_func *, hash_less_func *, void *aux);			/* 해시 테이블을 초기화합니다. */
+void hash_clear (struct hash *, hash_action_func *);			/* 해시 테이블의 모든 요소에 대해 action 함수를 호출한 후, 해시 테이블을 초기화 상태로 되돌립니다. */
+void hash_destroy (struct hash *, hash_action_func *);			/* 해시 테이블을 파괴하며, 저장된 모든 요소에 대해 action 함수를 호출합니다. */
 
 /* Search, insertion, deletion. */
+/* 테이블에 elem을 삽입합니다. 이미 동일한 키가 존재하면 삽입하지 않고 기존 요소를 반환합니다. */
 struct hash_elem *hash_insert (struct hash *, struct hash_elem *);
+/* 테이블에 elem을 삽입하거나, 동일한 키가 이미 존재하면 기존 요소를 새로운 elem으로 교체하여 반환합니다. */
 struct hash_elem *hash_replace (struct hash *, struct hash_elem *);
+/* 테이블에서 elem과 동일한 키를 가진 요소를 찾습니다. 찾으면 해당 요소를 반환하고, 없으면 NULL을 반환합니다. */
 struct hash_elem *hash_find (struct hash *, struct hash_elem *);
+/* 테이블에서 elem과 동일한 키를 가진 요소를 삭제하고 반환합니다. 삭제할 요소가 없으면 NULL을 반환합니다. */
 struct hash_elem *hash_delete (struct hash *, struct hash_elem *);
 
 /* Iteration. */

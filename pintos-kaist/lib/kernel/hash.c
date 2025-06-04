@@ -21,6 +21,8 @@ static void rehash (struct hash *);
 
 /* Initializes hash table H to compute hash values using HASH and
    compare hash elements using LESS, given auxiliary data AUX. */
+   /* 해시 테이블 H를 초기화합니다. HASH 함수를 사용해 해시 값을 계산하고,
+   LESS 함수를 사용해 해시 요소를 비교하며, AUX는 보조 데이터입니다. */
 bool
 hash_init (struct hash *h,
 		hash_hash_func *hash, hash_less_func *less, void *aux) {
@@ -88,6 +90,8 @@ hash_destroy (struct hash *h, hash_action_func *destructor) {
    no equal element is already in the table.
    If an equal element is already in the table, returns it
    without inserting NEW. */
+/* NEW을 해시 테이블 H에 삽입하고, 테이블에 동일한 요소가 없으면 NULL을 반환합니다.
+   만약 동일한 요소가 이미 존재하면, NEW를 삽입하지 않고 기존 요소를 반환합니다. */
 struct hash_elem *
 hash_insert (struct hash *h, struct hash_elem *new) {
 	struct list *bucket = find_bucket (h, new);
@@ -119,6 +123,8 @@ hash_replace (struct hash *h, struct hash_elem *new) {
 
 /* Finds and returns an element equal to E in hash table H, or a
    null pointer if no equal element exists in the table. */
+/* E와 동일한 요소를 해시 테이블 H에서 찾아 반환합니다.
+   없으면 NULL을 반환합니다. */
 struct hash_elem *
 hash_find (struct hash *h, struct hash_elem *e) {
 	return find_elem (h, find_bucket (h, e), e);
@@ -131,6 +137,10 @@ hash_find (struct hash *h, struct hash_elem *e) {
    If the elements of the hash table are dynamically allocated,
    or own resources that are, then it is the caller's
    responsibility to deallocate them. */
+   /* 해시 테이블 H에서 E와 동일한 요소를 찾아 제거한 뒤 반환합니다.
+	만약 동일한 요소가 테이블에 존재하지 않으면 NULL 포인터를 반환합니다.
+	만약 해시 테이블의 요소들이 동적으로 할당되었거나 자체적으로 소유한 자원이 있다면,
+	이를 해제하는 책임은 호출자에게 있습니다. */
 struct hash_elem *
 hash_delete (struct hash *h, struct hash_elem *e) {
 	struct hash_elem *found = find_elem (h, find_bucket (h, e), e);

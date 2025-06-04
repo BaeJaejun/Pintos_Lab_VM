@@ -229,6 +229,7 @@ pml4_get_page (uint64_t *pml4, const void *uaddr) {
  * otherwise it is read-only.
  * Returns true if successful, false if memory allocation
  * failed. */
+//주어진 PML4(최상위 페이지 테이블)에서 사용자 가상 페이지 upage를 물리 프레임 kpage에 매핑해 주는 역할
 bool
 pml4_set_page (uint64_t *pml4, void *upage, void *kpage, bool rw) {
 	ASSERT (pg_ofs (upage) == 0);
@@ -292,6 +293,9 @@ pml4_set_dirty (uint64_t *pml4, const void *vpage, bool dirty) {
  * accessed recently, that is, between the time the PTE was
  * installed and the last time it was cleared.  Returns false if
  * PML4 contains no PTE for VPAGE. */
+/* PML4의 가상 페이지 VPAGE에 대한 PTE가 최근(즉, PTE가 설치된 시점과
+ 마지막으로 clear된 시점 사이)에 접근된 적이 있으면 true를 반환합니다.
+ VPAGE에 해당하는 PTE가 PML4에 없으면 false를 반환합니다.  */
 bool
 pml4_is_accessed (uint64_t *pml4, const void *vpage) {
 	uint64_t *pte = pml4e_walk (pml4, (uint64_t) vpage, false);
@@ -300,6 +304,7 @@ pml4_is_accessed (uint64_t *pml4, const void *vpage) {
 
 /* Sets the accessed bit to ACCESSED in the PTE for virtual page
    VPAGE in PD. */
+/* PD에 있는 가상 페이지 VPAGE의 PTE에 접근 비트를 ACCESSED로 설정합니다. */
 void
 pml4_set_accessed (uint64_t *pml4, const void *vpage, bool accessed) {
 	uint64_t *pte = pml4e_walk (pml4, (uint64_t) vpage, false);

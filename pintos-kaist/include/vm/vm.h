@@ -2,6 +2,7 @@
 #define VM_VM_H
 #include <stdbool.h>
 #include "threads/palloc.h"
+#include "lib/kernel/hash.h"
 
 enum vm_type {
 	/* page not initialized */
@@ -40,6 +41,9 @@ struct thread;
  * This is kind of "parent class", which has four "child class"es, which are
  * uninit_page, file_page, anon_page, and page cache (project4).
  * DO NOT REMOVE/MODIFY PREDEFINED MEMBER OF THIS STRUCTURE. */
+ /* page”의 표현입니다. 이 구조체는 일종의 “부모 클래스”로,
+  네 개의 “자식 클래스”(uninit_page, file_page, anon_page, page cache(project4))를 가집니다.
+  이 구조체의 미리 정의된 멤버를 삭제하거나 수정하지 마십시오.*/
 struct page {
 	const struct page_operations *operations;
 	void *va;              /* Address in terms of user space */
@@ -47,6 +51,8 @@ struct page {
 
 	/* Your implementation */
 
+	struct hash_elem hash_elem; /* hash_elem에서 entry함수를 통해 page를 찾아가기 위해서 추가 */
+	bool writable;
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
 	union {
@@ -61,8 +67,9 @@ struct page {
 
 /* The representation of "frame" */
 struct frame {
-	void *kva;
-	struct page *page;
+	void *kva;						// 커널 가상 주소(allocated physical page를 커널에서 access할 때 쓰는 주소)
+	struct page *page;				// 이 프레임이 매핑된 가상 페이지 정보
+	struct list_elem frame_elem; 	// frame_list에 넣기 위한 list 구조체 요소 
 };
 
 /* The function table for page operations.
@@ -84,7 +91,9 @@ struct page_operations {
 /* Representation of current process's memory space.
  * We don't want to force you to obey any specific design for this struct.
  * All designs up to you for this. */
+// 현재 프로세스의 메모리 공간을 나타냄
 struct supplemental_page_table {
+	struct hash *spt_hash;			// spt를 hash로 구현한다
 };
 
 #include "threads/thread.h"
@@ -95,7 +104,7 @@ void supplemental_page_table_kill (struct supplemental_page_table *spt);
 struct page *spt_find_page (struct supplemental_page_table *spt,
 		void *va);
 bool spt_insert_page (struct supplemental_page_table *spt, struct page *page);
-void spt_remove_page (struct supplemental_page_table *spt, struct page *page);
+bool spt_remove_page (struct supplemental_page_table *spt, struct page *page);
 
 void vm_init (void);
 bool vm_try_handle_fault (struct intr_frame *f, void *addr, bool user,

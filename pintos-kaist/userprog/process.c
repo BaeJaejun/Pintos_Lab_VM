@@ -97,7 +97,7 @@ tid_t process_create_initd(const char *file_name)
 	thread_by_tid(tid)->parent_tid = parent->tid;
 
 	/* 5) 부모는 initd 준비까지 기다렸다가 리턴 */
-	sema_down(&c->sema);
+	sema_down(&c->sema); 
 	list_remove(&c->elem);
 	free(c);
 
