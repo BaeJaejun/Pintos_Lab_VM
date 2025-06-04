@@ -299,6 +299,11 @@ int process_exec(void *f_name)
 	/* We first kill the current context */
 	process_cleanup();
 
+#ifdef VM
+	/* project 3) 새 프로그램 로드를 위해 빈 SPT로 다시 초기화 추가*/
+	supplemental_page_table_init(&thread_current()->spt);
+#endif
+
 	/* And then load the binary */
 	success = load(file_name, &_if);
 
