@@ -164,7 +164,9 @@ vm_get_victim(void)
 static struct frame *
 vm_evict_frame(void)
 {
+	lock_acquire(&frame_table_lock);
 	struct frame *victim = vm_get_victim();
+	lock_release(&frame_table_lock);
 	/* TODO: swap out the victim and return the evicted frame. */
 	if (victim == NULL)
 		return NULL;
@@ -183,7 +185,6 @@ vm_evict_frame(void)
 static struct frame *
 vm_get_frame(void)
 {
-	lock_acquire(&frame_table_lock);
 
 	struct frame *frame = NULL;
 	/* TODO: Fill this function. */
@@ -197,17 +198,19 @@ vm_get_frame(void)
 		if (frame == NULL)
 		{
 			palloc_free_page(kva);
-			lock_release(&frame_table_lock);
 			return NULL;
 		}
-		frame->kva = kva;
-		frame->page = NULL;
-		list_push_back(&frame_table, &frame->frame_elem); // 프레임 테이블에 넣어줌
+		/* 새 프레임 내부 필드 초기화 */
+		frame->kva = kva;	/* 실제 물리 페이지의 커널 가상 주소 */
+		frame->page = NULL; /* 아직 어떤 SPTE와도 매핑되지 않은 상태 */
+
+		lock_acquire(&frame_table_lock);
+		list_push_back(&frame_table, &frame->frame_elem);
+		lock_release(&frame_table_lock);
 
 		ASSERT(frame != NULL);
 		ASSERT(frame->page == NULL);
 
-		lock_release(&frame_table_lock);
 		return frame;
 	}
 
@@ -218,7 +221,6 @@ vm_get_frame(void)
 		/* evicition 실패 했다면 NULL을 리턴
 			함수 상단 주석을 보면 항상 옳은 주소 반환 -> 실패 없음
 		*/
-		lock_release(&frame_table_lock);
 		return NULL;
 	}
 	victim->page = NULL;
@@ -226,7 +228,6 @@ vm_get_frame(void)
 	ASSERT(victim != NULL);
 	ASSERT(victim->page == NULL);
 
-	lock_release(&frame_table_lock);
 	return victim;
 }
 
@@ -269,9 +270,19 @@ bool vm_claim_page(void *va)
 	/* TODO: Fill this function */
 	/* 현재 스레드의 spt에서 해당 VA에 할당된 struct page 찾기 */
 
+	// spt_find_page 실패시 오류처리
 	page = spt_find_page(&thread_current()->spt, va);
 	if (page == NULL)
 		return false;
+
+	// 실패시 익명페이지 할당?
+	// if (page == NULL)
+	// {
+	// 	page = vm_alloc_page(VM_ANON, va, true); // va에 쓰기 가능 익명 페이지를 나타내는 새 struct page를 할당하여 반환한다
+	// 	if (page == NULL)
+	// 		return false;
+	// }
+	// spt_insert_page(thread_current()->spt, page);
 
 	return vm_do_claim_page(page);
 }
@@ -339,7 +350,8 @@ void supplemental_page_table_kill(struct supplemental_page_table *spt)
 	{
 		p = hash_entry(hash_cur(&i), struct page, hash_elem);
 
-		vm_dealloc_page(p);
+		// vm_dealloc_page(p);
+		spt_remove_page(spt, p); // 해당 페이지를 spt에서 제거 하고 메모리 까지 해제
 	}
 
 	// 버킷 배열 메모리 자체를 해제
