@@ -45,15 +45,14 @@ page_get_type(struct page *page)
 		return ty;
 	}
 }
-
 /* Helpers */
 static struct frame *vm_get_victim(void);
 static bool vm_do_claim_page(struct page *page);
 static struct frame *vm_evict_frame(void);
 
-/* Create the pending page object with initializer. If you want to create a
- * page, do not create it directly and make it through this function or
- * `vm_alloc_page`. */
+/* 초기화 함수가 설정된 대기 중인 페이지 객체를 생성합니다.
+ 페이지를 생성하려면 직접 생성하지 말고 이 함수
+ 또는 `vm_alloc_page`를 통해 생성해야 합니다. */
 bool vm_alloc_page_with_initializer(enum vm_type type, void *upage, bool writable,
 									vm_initializer *init, void *aux)
 {
@@ -65,11 +64,34 @@ bool vm_alloc_page_with_initializer(enum vm_type type, void *upage, bool writabl
 	/* Check wheter the upage is already occupied or not. */
 	if (spt_find_page(spt, upage) == NULL)
 	{
-		/* TODO: Create the page, fetch the initialier according to the VM type,
-		 * TODO: and then create "uninit" page struct by calling uninit_new. You
-		 * TODO: should modify the field after calling the uninit_new. */
+		/* TODO: 페이지를 생성하고, VM 타입에 따라 초기화 함수를 가져온 뒤,
+		   uninit_new를 호출하여 “uninit” 페이지 구조체를 생성하세요.
+		   uninit_new를 호출한 후에는 해당 구조체의 필드를 수정해야 합니다.
+		   TODO: 페이지를 spt에 삽입하세요.*/
 
-		/* TODO: Insert the page into the spt. */
+		struct page *newpage = malloc(sizeof(struct page)); // 페이지 생성
+
+		/* vm타입에 따라 초기화 함수 가져오기 */
+		vm_initializer *init = NULL; // vm_initializer함수 포인터형태로 uninit_new 함수의 인자에 넣어야 한다.
+		switch (type)
+		{
+		case VM_ANON:
+			init = anon_initializer;
+			break;
+
+		case VM_FILE:
+			init = file_backed_initializer;
+			break;
+		}
+
+		/* 새로 생성한 struct page 객체를 ‘초기화되지 않은 페이지(uninitialized page)’ 상태로 세팅’해 주는 역할*/
+		uninit_new(newpage, upage, init, type, aux, init);
+
+		/* 새로 생성한 페이지 구조체 수정 -> 매핑을 위한 쓰기 권한 주기 */
+		newpage->writable = true;
+
+		/* 페이지를 spt에 삽입 */
+		spt_insert_page(spt, newpage);
 	}
 err:
 	return false;
@@ -249,9 +271,14 @@ bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED,
 {
 	struct supplemental_page_table *spt UNUSED = &thread_current()->spt;
 	struct page *page = NULL;
-	/* TODO: Validate the fault */
-	/* TODO: Your code goes here */
-
+	/* TODO: 페이지 폴트(예외) 검증 */
+	page = spt_find_page(spt, addr);
+	/* spt안에 page가 없으면 유효하지 않은 주소라 판단 후 false 처리 */
+	if (page == NULL)
+		return false;
+	/* vm_do_claim_page에서 모든 작업이 처리됨
+	(1. 물리메모리에 파일 올려주는 것(uninit_initailize)과
+	 2. 가상주소와 물리주소를 매핑하는 일) */
 	return vm_do_claim_page(page);
 }
 
@@ -341,19 +368,19 @@ void supplemental_page_table_kill(struct supplemental_page_table *spt)
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
 
-	struct hash_iterator i;
-	struct page *p;
+	// struct hash_iterator i;
+	// struct page *p;
 
-	/* 전체 해쉬 테이블 순회하면서 vm_dealloc_page 수행*/
-	hash_first(&i, &spt->spt_hash);
-	while (hash_next(&i))
-	{
-		p = hash_entry(hash_cur(&i), struct page, hash_elem);
+	// /* 전체 해쉬 테이블 순회하면서 vm_dealloc_page 수행*/
+	// hash_first(&i, &spt->spt_hash);
+	// while (hash_next(&i))
+	// {
+	// 	p = hash_entry(hash_cur(&i), struct page, hash_elem);
 
-		// vm_dealloc_page(p);
-		spt_remove_page(spt, p); // 해당 페이지를 spt에서 제거 하고 메모리 까지 해제
-	}
+	// 	// vm_dealloc_page(p);
+	// 	spt_remove_page(spt, p); // 해당 페이지를 spt에서 제거 하고 메모리 까지 해제
+	// }
 
-	// 버킷 배열 메모리 자체를 해제
-	hash_destroy(&spt->spt_hash, NULL);
+	// // 버킷 배열 메모리 자체를 해제
+	// hash_destroy(&spt->spt_hash, NULL);
 }

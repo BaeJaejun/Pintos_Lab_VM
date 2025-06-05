@@ -18,10 +18,11 @@
 #include "threads/mmu.h"
 #include "threads/vaddr.h"
 #include "intrinsic.h"
+#include "vm/vm.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
-
+// #define VM
 /* process_wait를 위한 sema*/
 #include "threads/synch.h"
 
@@ -299,10 +300,10 @@ int process_exec(void *f_name)
 	/* We first kill the current context */
 	process_cleanup();
 
-#ifdef VM
-	/* project 3) 새 프로그램 로드를 위해 빈 SPT로 다시 초기화 추가*/
-	supplemental_page_table_init(&thread_current()->spt);
-#endif
+	// #ifdef VM
+	// 	/* project 3) 새 프로그램 로드를 위해 빈 SPT로 다시 초기화 추가*/
+	// 	supplemental_page_table_init(&thread_current()->spt);
+	// #endif
 
 	/* And then load the binary */
 	success = load(file_name, &_if);
@@ -838,13 +839,29 @@ install_page(void *upage, void *kpage, bool writable)
 /* From here, codes will be used after project 3.
  * If you want to implement the function for only project 2, implement it on the
  * upper block. */
-
+/*  page:   SPT에서 찾아온 struct page 포인터 (가상 주소 VA와 관련된 페이지 객체)
+	aux:    load_segment() 단계에서 넘겨준 추가 정보(lazy_load_aux 구조체) */
 static bool
 lazy_load_segment(struct page *page, void *aux)
 {
-	/* TODO: Load the segment from the file */
-	/* TODO: This called when the first page fault occurs on address VA. */
-	/* TODO: VA is available when calling this function. */
+	/* TODO: 파일에서 세그먼트를 로드하세요 */
+	/* TODO: 이 함수는 주소 VA에서 첫 번째 페이지 폴트가 발생할 때 호출됩니다. */
+	/* TODO: VA는 이 함수가 호출될 때 사용할 수 있습니다. */
+
+	/* aux로 전달된 정보를 lazy_load_aux 구조체로 캐스팅 */
+	struct lazy_load_aux *info = aux;
+	void *kva = page->frame->kva;
+
+	/* 파일에서 read_bytes만큼 읽어서 할당된 프레임(kva)에 복사 */
+	if (file_read(info->file, kva, info->read_bytes) != info->read_bytes)
+	{
+		// 파일에서 원하는 만큼 읽어오지 못하면 실패 처리
+		palloc_free_page(kva);
+		return false;
+	}
+	/* 파일에서 읽지 않은 나머지 부분(zero_bytes)을 0으로 채우기 */
+	memset(kva + info->read_bytes, 0, info->zero_bytes);
+	return true;
 }
 
 /* Loads a segment starting at offset OFS in FILE at address
@@ -877,31 +894,53 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
 		size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-		/* TODO: Set up aux to pass information to the lazy_load_segment. */
-		void *aux = NULL;
-		if (!vm_alloc_page_with_initializer(VM_ANON, upage,
-											writable, lazy_load_segment, aux))
+		/* ▶ TODO: lazy_load_segment에 넘겨줄 aux 구조체 채우기 */
+		struct lazy_load_aux *aux = malloc(sizeof(struct lazy_load_aux));
+		if (aux == NULL)
 			return false;
+
+		aux->file = file;
+		aux->offset = ofs;
+		aux->read_bytes = read_bytes;
+		aux->zero_bytes = zero_bytes;
+		aux->writable = writable;
+
+		if (!vm_alloc_page_with_initializer(VM_ANON, upage, writable, lazy_load_segment, aux))
+		{
+			free(aux);
+			return false;
+		}
 
 		/* Advance. */
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
 		upage += PGSIZE;
+		ofs += page_read_bytes;
 	}
 	return true;
 }
 
-/* Create a PAGE of stack at the USER_STACK. Return true on success. */
+/* USER_STACK에서 스택용 페이지를 생성합니다. 성공 시 true를 반환합니다. */
+
 static bool
 setup_stack(struct intr_frame *if_)
 {
 	bool success = false;
 	void *stack_bottom = (void *)(((uint8_t *)USER_STACK) - PGSIZE);
 
-	/* TODO: Map the stack on stack_bottom and claim the page immediately.
-	 * TODO: If success, set the rsp accordingly.
-	 * TODO: You should mark the page is stack. */
-	/* TODO: Your code goes here */
+	/* TODO: stack_bottom 위치에 스택을 매핑하고 즉시 페이지를 할당하세요.
+	 * TODO: 성공하면 rsp를 적절히 설정하세요.
+	 * TODO: 이 페이지가 스택임을 표시해야 합니다. */
+	/* TODO: 여기에 코드를 작성하세요 */
+
+	if (vm_alloc_page(VM_ANON | VM_MARKER_0, stack_bottom, 1))
+	{
+		success = vm_claim_page(stack_bottom);
+		if (success)
+		{
+			if_->rsp = USER_STACK;
+		}
+	}
 
 	return success;
 }
