@@ -298,11 +298,10 @@ int process_exec(void *f_name)
 
 	/* We first kill the current context */
 	process_cleanup();
-
-#ifdef VM
-	/* project 3) 새 프로그램 로드를 위해 빈 SPT로 다시 초기화 추가*/
-	supplemental_page_table_init(&thread_current()->spt);
-#endif
+	// #ifdef VM
+	// 	/* project 3) 새 프로그램 로드를 위해 빈 SPT로 다시 초기화 추가*/
+	// 	supplemental_page_table_init(&thread_current()->spt);
+	// #endif
 
 	/* And then load the binary */
 	success = load(file_name, &_if);
@@ -845,6 +844,34 @@ lazy_load_segment(struct page *page, void *aux)
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
+	struct load_info *info = (struct load_info *)aux;
+	struct file *file = info->file;
+	off_t offset = info->offset;
+	uint32_t read_bytes = info->read_bytes;
+	uint32_t zero_bytes = info->zero_bytes;
+
+	/* 1) 이미 페이지에 매핑된 frame을 준비함 */
+	struct frame *frame = page->frame;
+	if (frame == NULL)
+	{
+		free(info);
+		return false;
+	}
+	void *kva = frame->kva;
+
+	/* 2) 파일 위치 설정 후, read_bytes만큼 읽어서 kva에 복사 */
+	file_seek(file, offset);
+	if (file_read(file, kva, read_bytes) != (int)read_bytes)
+	{
+		free(info);
+		return false;
+	}
+
+	/* 3) 나머지 부분(zero_bytes)만큼 0으로 채움 */
+	memset(kva + read_bytes, 0, zero_bytes);
+
+	free(info);
+	return true;
 }
 
 /* Loads a segment starting at offset OFS in FILE at address
@@ -878,15 +905,31 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
-		void *aux = NULL;
-		if (!vm_alloc_page_with_initializer(VM_ANON, upage,
-											writable, lazy_load_segment, aux))
+		/* 로드를 위해 필요한 정보를 가진 load_info 구조체 만들었음*/
+		struct load_info *aux = (struct load_info *)malloc(sizeof(*aux));
+		if (aux == NULL)
 			return false;
 
+		aux->file = file;
+		aux->offset = ofs;
+		aux->read_bytes = page_read_bytes;
+		aux->zero_bytes = page_zero_bytes;
+		aux->writable = writable;
+
+		if (!vm_alloc_page_with_initializer(VM_FILE, upage,
+											writable, lazy_load_segment, aux))
+		{
+			free(aux);
+			return false;
+		}
+
 		/* Advance. */
+		/* 4) 다음 반복을 위해 각 값 갱신 */
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
 		upage += PGSIZE;
+		/* 파일에서 연속적으로 다음 페이지를 읽어 오기 위함 */
+		ofs += page_read_bytes; /* ofs를 읽어들인 만큼만 증가 */
 	}
 	return true;
 }
@@ -902,6 +945,21 @@ setup_stack(struct intr_frame *if_)
 	 * TODO: If success, set the rsp accordingly.
 	 * TODO: You should mark the page is stack. */
 	/* TODO: Your code goes here */
+
+	/* ANON 스택 페이지 하나 할당 받음
+		writable : true
+	*/
+	if (!vm_alloc_page(VM_ANON, stack_bottom, true))
+		return false;
+
+	// 할당 받은 페이지에 바로 물리 프레임을 매핑한다.
+	if (!vm_claim_page(stack_bottom))
+		return false;
+
+	// rsp를 변경한다. (argument_stack에서 이 위치부터 인자를 push한다.)
+	if_->rsp = USER_STACK;
+
+	success = true;
 
 	return success;
 }
