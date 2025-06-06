@@ -51,12 +51,13 @@ anon_swap_out(struct page *page)
 static void
 anon_destroy(struct page *page)
 {
-	struct anon_page *anon_page = &page->anon;
+	// struct anon_page *anon_page = &page->anon;
 
-	/* 물리 메모리에 올라와 있는 페이지가 있으면 해제 */
-	if (page->frame != NULL)
-	{
-		palloc_free_page(page->frame->page);
-		page->frame = NULL;
-	}
+	// /* 물리 메모리에 올라와 있는 페이지가 있으면 해제 */
+	// if (page->frame != NULL)
+	// {
+	// 	palloc_free_page(page->frame->kva);
+	// 	pml4_clear_page(thread_current()->pml4, page->va);
+	// 	free(page->frame);
+	// }
 }

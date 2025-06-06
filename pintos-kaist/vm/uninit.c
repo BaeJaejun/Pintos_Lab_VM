@@ -69,10 +69,10 @@ uninit_destroy(struct page *page)
 	/* TODO: Fill this function.
 	 * TODO: If you don't have anything to do, just return. */
 
-	/* uninit 단계에서만 갖고 있는 추가 리소스(aux)가 있으면 해제 */
-	if (uninit->aux != NULL)
-	{
-		free(uninit->aux);
-		uninit->aux = NULL;
-	}
+	// /* uninit 단계에서만 갖고 있는 추가 리소스(aux)가 있으면 해제 */
+	// if (uninit->aux != NULL)
+	// {
+	// 	free(uninit->aux);
+	// 	uninit->aux = NULL;
+	// }
 }

@@ -298,10 +298,10 @@ int process_exec(void *f_name)
 
 	/* We first kill the current context */
 	process_cleanup();
-	// #ifdef VM
-	// 	/* project 3) 새 프로그램 로드를 위해 빈 SPT로 다시 초기화 추가*/
-	// 	supplemental_page_table_init(&thread_current()->spt);
-	// #endif
+#ifdef VM
+	/* project 3) 새 프로그램 로드를 위해 빈 SPT로 다시 초기화 추가*/
+	supplemental_page_table_init(&thread_current()->spt);
+#endif
 
 	/* And then load the binary */
 	success = load(file_name, &_if);
@@ -916,7 +916,7 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
 		aux->zero_bytes = page_zero_bytes;
 		aux->writable = writable;
 
-		if (!vm_alloc_page_with_initializer(VM_FILE, upage,
+		if (!vm_alloc_page_with_initializer(VM_ANON, upage,
 											writable, lazy_load_segment, aux))
 		{
 			free(aux);
