@@ -21,6 +21,9 @@
 #include "filesys/file.h"
 #include "devices/input.h"
 
+/* project3을 위한 헤더 선언 */
+#include "vm/vm.h"
+
 void syscall_entry(void);
 void syscall_handler(struct intr_frame *);
 
@@ -288,10 +291,21 @@ void syscall_handler(struct intr_frame *f UNUSED)
 */
 void check_user_address(const void *uaddr)
 {
+#ifndef VM
+	// project 2
 	if (!uaddr || !is_user_vaddr(uaddr) || pml4_get_page(thread_current()->pml4, uaddr) == NULL)
 	{
 		sys_exit(-1);
 	}
+#else
+	// project 3
+	// spt 매핑 여부 검사 : spt_find_page() == NULL -> exit()
+	// todo : 검사 조건 수정 필요합니닷
+	if (!uaddr || !is_user_vaddr(uaddr) || spt_find_page(&thread_current()->spt, uaddr) == NULL)
+	{
+		sys_exit(-1);
+	}
+#endif
 }
 
 /*	check_user_buffer(char *buffer, size_t size){}

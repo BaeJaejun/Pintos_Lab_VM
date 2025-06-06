@@ -264,8 +264,12 @@ vm_get_frame(void)
 
 /* Growing the stack. */
 static void
-vm_stack_growth(void *addr UNUSED)
+vm_stack_growth(void *addr)
 {
+	/* 스택 영역은 프로그램 실행 중 생기는 빈 메모리를 담는 공간
+		=> anonmous page
+	*/
+	vm_alloc_page(VM_ANON, pg_round_down(addr), true);
 }
 
 /* Handle the fault on write_protected page */
@@ -282,15 +286,45 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr,
 	struct page *page = NULL;
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
-	/* fault된 가상 주소를 페이지 경계로 내림 */
+
+	/* NULL 체크 및 사용자 모드가 아니면 실패 */
+	if (addr == NULL || is_kernel_vaddr(addr) || (!user))
+	{
+		return false;
+	}
+
+	/* fault된 가상 주소를 페이지 경계로 반올림 */
 	void *fault_page = pg_round_down(addr);
 
-	/* spt에 예약된 uninit 페이지가 있으면 물리 메모리로 올리기 */
-	page = spt_find_page(spt, fault_page);
-	if (page != NULL)
-		return vm_do_claim_page(page);
+	/* spt에 예약된(매핑은 안되어 있는 : not_present)
+		uninit 페이지가 있으면 물리 메모리로 올리기 */
+	if (not_present)
+	{
+		page = spt_find_page(spt, fault_page);
+		if (page == NULL)
+		{
+			/* 기존 페이지가 없으면 스택 확장 조건 검사 */
+			void *rsp = f->rsp;
+			if (addr < USER_STACK											  /* 스택 영역 이내 */
+				&& (uintptr_t)USER_STACK - (uintptr_t)fault_page <= (1 << 20) /* 1MB 제한 */
+				&& (uintptr_t)addr >= (uintptr_t)rsp - 32)					  /* rsp-32 이내 */
+			{
+				/* 스택 확장 시도 */
+				vm_stack_growth(fault_page);
+			}
+		}
 
-	/* todo: 스택 확장? */
+		/* SPT에 새 페이지가 등록되었으므로 다시 찾기 */
+		page = spt_find_page(spt, fault_page);
+		/* page가 존재하면 쓰기 권한 검사 후 claim */
+		if (page != NULL)
+		{
+			if (write && !page->writable)
+				return false;
+			return vm_do_claim_page(page);
+		}
+	}
+
 	return false;
 }
 
@@ -372,27 +406,53 @@ void supplemental_page_table_init(struct supplemental_page_table *spt)
 bool supplemental_page_table_copy(struct supplemental_page_table *dst,
 								  struct supplemental_page_table *src)
 {
+	struct hash_iterator i;
+
+	hash_first(&i, &src->spt_hash);
+	while (hash_next(&i))
+	{
+		struct page *src_page = hash_entry(hash_cur(&i), struct page, hash_elem);
+		enum vm_type type = src_page->operations->type;
+		void *va = src_page->va;
+		bool writable = src_page->writable;
+
+		/* uninit 상태일 때 */
+		if (type == VM_UNINIT)
+		{
+			vm_initializer *init = src_page->uninit.init;
+			void *aux = src_page->uninit.aux;
+			if (!vm_alloc_page_with_initializer(type, va, writable, init, aux))
+				return false;
+			continue;
+		}
+
+		/* VM_ANON or VM_FILE 일때 메모리 할당 -> 페이지 요청 -> 메모리 복사 */
+		if (!vm_alloc_page(type, va, writable))
+			return false;
+
+		if (!vm_claim_page(va))
+			return false;
+
+		struct page *dst_page = spt_find_page(dst, va);
+		memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
+	}
+	return true;
+}
+
+/* spt_kill()을 위한 함수 추가*/
+void hash_page_destroy(struct hash_elem *e, void *aux)
+{
+	struct page *p = hash_entry(e, struct page, hash_elem);
+	destroy(p);
+	free(p);
 }
 
 /* Free the resource hold by the supplemental page table */
 void supplemental_page_table_kill(struct supplemental_page_table *spt)
 {
-	// /* TODO: Destroy all the supplemental_page_table hold by thread and
-	//  * TODO: writeback all the modified contents to the storage. */
+	/* TODO: Destroy all the supplemental_page_table hold by thread and
+	 * TODO: writeback all the modified contents to the storage. */
 
-	// struct hash_iterator i;
-	// struct page *p;
-
-	// /* 전체 해쉬 테이블 순회하면서 vm_dealloc_page 수행*/
-	// hash_first(&i, &spt->spt_hash);
-	// while (hash_next(&i))
-	// {
-	// 	p = hash_entry(hash_cur(&i), struct page, hash_elem);
-
-	// 	vm_dealloc_page(p);
-	// 	// spt_remove_page(spt, p); // 해당 페이지를 spt에서 제거 하고 메모리 까지 해제
-	// }
-
-	// // 버킷 배열 메모리 자체를 해제
-	// hash_destroy(&spt->spt_hash, NULL);
+	// 버킷 배열 메모리 자체를 해제
+	hash_clear(&spt->spt_hash, hash_page_destroy);
 }
