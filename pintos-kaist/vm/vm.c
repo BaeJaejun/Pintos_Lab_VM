@@ -269,7 +269,8 @@ vm_stack_growth(void *addr)
 	/* 스택 영역은 프로그램 실행 중 생기는 빈 메모리를 담는 공간
 		=> anonmous page
 	*/
-	vm_alloc_page(VM_ANON, pg_round_down(addr), true);
+	void *upage = pg_round_down(addr);
+	vm_alloc_page(VM_ANON, upage, true);
 }
 
 /* Handle the fault on write_protected page */
@@ -287,8 +288,14 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr,
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
 
-	/* NULL 체크 및 사용자 모드가 아니면 실패 */
-	if (addr == NULL || is_kernel_vaddr(addr) || (!user))
+	/*
+		NULL 체크 및 커널 영역 접근은 실패
+		is_kernel_vaddr(addr) 는 “어떤 주소를 건드리려 했나” (대상 메모리 영역)
+		user 는 “어디서 폴트가 발생했나” (접근 주체의 권한 레벨)
+
+		(수정)user 검사 제외 : 유저 모드, 커널 영역 둘다 스택 확장이 필요할 수 있음
+	*/
+	if (addr == NULL || is_kernel_vaddr(addr))
 	{
 		return false;
 	}
@@ -296,6 +303,8 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr,
 	/* fault된 가상 주소를 페이지 경계로 반올림 */
 	void *fault_page = pg_round_down(addr);
 
+	/* RSP 결정: user 모드면 f->rsp, kernel 모드면 저장해 둔 user_rsp_saved */
+	void *rsp = user ? f->rsp : thread_current()->rsp_stack;
 	/* spt에 예약된(매핑은 안되어 있는 : not_present)
 		uninit 페이지가 있으면 물리 메모리로 올리기 */
 	if (not_present)
@@ -303,19 +312,24 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr,
 		page = spt_find_page(spt, fault_page);
 		if (page == NULL)
 		{
+			void *stack_bottom = thread_current()->stack_bottom;
 			/* 기존 페이지가 없으면 스택 확장 조건 검사 */
-			void *rsp = f->rsp;
 			if (addr < USER_STACK											  /* 스택 영역 이내 */
 				&& (uintptr_t)USER_STACK - (uintptr_t)fault_page <= (1 << 20) /* 1MB 제한 */
-				&& (uintptr_t)addr >= (uintptr_t)rsp - 32)					  /* rsp-32 이내 */
+				&& fault_page + PGSIZE == stack_bottom)						  /* 기존에 할당된 스택 최하단(stack_bottom) 바로 아래(fault_page + PGSIZE)인지 검사 */
+			//&& (uintptr_t)addr >= (uintptr_t)rsp - 32					  /* rsp-32 이내 */
+			//&& ((uintptr_t)fault_page < (uintptr_t)rsp))				  /* 이미 할당된 스택 영역 제외 */
 			{
 				/* 스택 확장 시도 */
 				vm_stack_growth(fault_page);
+
+				/* 확장 후 최하단 경계 갱신 */
+				thread_current()->stack_bottom = fault_page;
 			}
+			/* SPT에 새 페이지가 등록되었으므로 다시 찾기 */
+			page = spt_find_page(spt, fault_page);
 		}
 
-		/* SPT에 새 페이지가 등록되었으므로 다시 찾기 */
-		page = spt_find_page(spt, fault_page);
 		/* page가 존재하면 쓰기 권한 검사 후 claim */
 		if (page != NULL)
 		{
@@ -421,20 +435,27 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst,
 		{
 			vm_initializer *init = src_page->uninit.init;
 			void *aux = src_page->uninit.aux;
-			if (!vm_alloc_page_with_initializer(type, va, writable, init, aux))
+			/* vm_alloc_page_with_initializer(type, ...) 여기서 type은 최종 타입을 보내줘야함 */
+			if (!vm_alloc_page_with_initializer(src_page->uninit.type, va, writable,
+												init, aux))
 				return false;
-			continue;
 		}
+		else
+		{
+			/* VM_ANON or VM_FILE 일때 메모리 할당 -> 페이지 요청 -> 메모리 복사 */
+			if (!vm_alloc_page(type, va, writable))
+				return false;
 
-		/* VM_ANON or VM_FILE 일때 메모리 할당 -> 페이지 요청 -> 메모리 복사 */
-		if (!vm_alloc_page(type, va, writable))
-			return false;
+			/* 물리 프레임 연결 */
+			if (!vm_claim_page(va))
+				return false;
 
-		if (!vm_claim_page(va))
-			return false;
+			/* 실제 물리 프레임 할당을 위해 자식 page 구조체를 찾는다 */
+			struct page *dst_page = spt_find_page(dst, va);
 
-		struct page *dst_page = spt_find_page(dst, va);
-		memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
+			/* 부모 프레임에서 자식 프레임으로 내용 복사 */
+			memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
+		}
 	}
 	return true;
 }
@@ -443,8 +464,8 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst,
 void hash_page_destroy(struct hash_elem *e, void *aux)
 {
 	struct page *p = hash_entry(e, struct page, hash_elem);
-	destroy(p);
-	free(p);
+	/* 이 한 줄로 프레임 해제, 스왑 슬롯 반환, aux free, 그리고 free(p)까지 수행 */
+	vm_dealloc_page(p);
 }
 
 /* Free the resource hold by the supplemental page table */

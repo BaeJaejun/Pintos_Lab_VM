@@ -916,7 +916,7 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
 		aux->zero_bytes = page_zero_bytes;
 		aux->writable = writable;
 
-		if (!vm_alloc_page_with_initializer(VM_FILE, upage,
+		if (!vm_alloc_page_with_initializer(VM_ANON, upage,
 											writable, lazy_load_segment, aux))
 		{
 			free(aux);
@@ -958,6 +958,9 @@ setup_stack(struct intr_frame *if_)
 
 	// rsp를 변경한다. (argument_stack에서 이 위치부터 인자를 push한다.)
 	if_->rsp = USER_STACK;
+
+	// 스레드가 지금까지 할당받은 스택의 최하단(가장 낮은 주소)를 나타내는 경계
+	thread_current()->stack_bottom = stack_bottom;
 
 	success = true;
 
