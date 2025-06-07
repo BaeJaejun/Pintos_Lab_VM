@@ -278,35 +278,126 @@ vm_handle_wp(struct page *page UNUSED)
 }
 
 /* Return true on success */
+// bool vm_try_handle_fault(struct intr_frame *f, void *addr,
+// 						 bool user, bool write, bool not_present)
+// {
+// 	struct supplemental_page_table *spt UNUSED = &thread_current()->spt;
+// 	struct page *page = NULL;
+// 	uintptr_t sp = is_kernel_vaddr(f->rsp) ? thread_current()->rsp_stack : f->rsp; // f-> rsp는 유저 모드에서 페이지 폴트가 난 시점의 사용자 스택 포인터 값
+// 	/* fault된 가상 주소를 페이지 경계로 내림 */
+// 	void *fault_page = pg_round_down(addr);
+
+// 	/* TODO: Validate the fault */
+// 	/* TODO: Your code goes here */
+
+// 	// /* spt에 예약된 uninit 페이지가 있으면 물리 메모리로 올리기 */
+// 	// page = spt_find_page(spt, fault_page);
+// 	// if (page != NULL)
+// 	// 	return vm_do_claim_page(page);
+// 	// else
+// 	// {
+// 	// 	/* todo: 스택 확장? */
+// 	// 	if (!is_user_vaddr(addr) || !not_present)
+// 	// 		return false;
+// 	// 	if (!(((uintptr_t)fault_page < sp) && (sp - (uintptr_t)fault_page <= 32)))
+// 	// 		return false;
+// 	// 	if ((USER_STACK - (uintptr_t)fault_page) >= 1024 * 1024)
+// 	// 		return false;
+// 	// 	vm_stack_growth(fault_page);
+// 	// 	page = spt_find_page(spt, fault_page);
+// 	// 	if (page != NULL)
+// 	// 	{
+// 	// 		vm_do_claim_page(page);
+// 	// 		return true;
+// 	// 	}
+// 	// }
+
+// 	// return false;
+
+// 	if (!is_user_vaddr(addr) || !not_present)
+// 		return false;
+
+// 	page = spt_find_page(spt, fault_page);
+// 	if (page)
+// 		return vm_do_claim_page(page);
+// 	if (((uintptr_t)fault_page < sp) && ((sp - (uintptr_t)fault_page) <= 32) && (((uintptr_t)thread_current()->stack_bottom - (uintptr_t)fault_page) < (1024 * 1024)))
+// 	{
+// 		vm_stack_growth(thread_current()->stack_bottom - PGSIZE);
+// 		page = spt_find_page(spt, fault_page);
+// 		if (page)
+// 			return vm_do_claim_page(page);
+// 	}
+// 	return false;
+// }
+/*-------------------------------------------------------------------------------------------------------------------------------------------*/
+
+// bool vm_try_handle_fault(struct intr_frame *f, void *addr,
+// 						 bool user, bool write, bool not_present)
+// {
+// 	struct thread *t = thread_current();
+// 	struct supplemental_page_table *spt = &t->spt;
+// 	void *fault_page = pg_round_down(addr);
+
+// 	/* 1) 유저 영역 확인 & 권한 오류 차단 */
+// 	if (!is_user_vaddr(addr) || !not_present)
+// 		return false;
+
+// 	/* 2) rsp_stack + sp 분리 */
+// 	void *rsp_stack = is_kernel_vaddr(f->rsp)
+// 						  ? t->rsp_stack
+// 						  : f->rsp;
+// 	uintptr_t sp = (uintptr_t)rsp_stack;
+
+// 	/* 3) SPT 검색 → 이미 있으면 페이지 클레임 */
+// 	struct page *page = spt_find_page(spt, fault_page);
+// 	if (page)
+// 		return vm_do_claim_page(page);
+
+// 	/* 4) 스택 확장 조건:
+// 	 *    1) fault_page < sp
+// 	 *    2) sp - fault_page ≤ 32
+// 	 *    3) (현재 바닥 - fault_page) ≤ 허용 최대 크기
+// 	 */
+// 	uintptr_t cur_bottom = (uintptr_t)t->stack_bottom;
+// 	const size_t MAX_STACK = 256 * PGSIZE; // 예: 1MiB
+// 	if ((uintptr_t)fault_page < sp && sp - (uintptr_t)fault_page <= 32 && cur_bottom - (uintptr_t)fault_page <= MAX_STACK)
+// 	{
+// 		/* 5) 정확한 위치로 스택 확장 호출 */
+// 		vm_stack_growth(t->stack_bottom - PGSIZE);
+
+// 		/* 6) 다시 SPT 검색 & 클레임 */
+// 		page = spt_find_page(spt, fault_page);
+// 		if (page)
+// 			return vm_do_claim_page(page);
+// 	}
+
+// 	return false;
+// }
+
+/*-------------------------------------------------------------------------------------------------------------------------------------------*/
 bool vm_try_handle_fault(struct intr_frame *f, void *addr,
 						 bool user, bool write, bool not_present)
 {
-	/* TODO: Validate the fault */
-	/* TODO: Your code goes here */
-	struct supplemental_page_table *spt UNUSED = &thread_current()->spt;
+	struct supplemental_page_table *spt = &thread_current()->spt;
 	struct page *page = NULL;
-	uintptr_t sp = (uintptr_t)f->rsp; // f-> rsp는 유저 모드에서 페이지 폴트가 난 시점의 사용자 스택 포인터 값
-	/* fault된 가상 주소를 페이지 경계로 내림 */
-	void *fault_page = pg_round_down(addr);
-	/* spt에 예약된 uninit 페이지가 있으면 물리 메모리로 올리기 */
-	page = spt_find_page(spt, fault_page);
-	if (page != NULL)
-		return vm_do_claim_page(page);
-	else
-	{
-		/* todo: 스택 확장? */
-		if (!is_user_vaddr(addr) || !not_present)
-			return false;
-		if (!(((uintptr_t)fault_page < sp) && (sp - (uintptr_t)fault_page <= 32)))
-			return false;
-		if ((USER_STACK - (uintptr_t)fault_page) >= 1024 * 1024)
-			return false;
-		vm_stack_growth(fault_page);
-		page = spt_find_page(spt, fault_page);
-		if (page != NULL)
-			vm_do_claim_page(page);
-	}
 
+	if (is_kernel_vaddr(addr))
+		return false;
+	void *rsp_stack = f->rsp;
+	if (not_present)
+	{
+		if (!vm_claim_page(addr))
+		{
+			if (rsp_stack - 8 <= addr && USER_STACK - 0x100000 <= addr && addr <= USER_STACK)
+			{
+				vm_stack_growth(thread_current()->stack_bottom - PGSIZE);
+				return true;
+			}
+			return false;
+		}
+		else
+			return true;
+	}
 	return false;
 }
 

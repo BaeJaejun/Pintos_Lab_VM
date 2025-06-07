@@ -958,9 +958,21 @@ setup_stack(struct intr_frame *if_)
 
 	// rsp를 변경한다. (argument_stack에서 이 위치부터 인자를 push한다.)
 	if_->rsp = USER_STACK;
+	thread_current()->stack_bottom = stack_bottom;
 
 	success = true;
 
 	return success;
+
+	// if (vm_alloc_page(VM_ANON, stack_bottom, true))
+	// {
+	// 	success = vm_claim_page(stack_bottom);
+	// 	if (success)
+	// 	{
+	// 		if_->rsp = USER_STACK;
+	// 		thread_current()->stack_bottom = stack_bottom;
+	// 	}
+	// }
+	// return success;
 }
 #endif /* VM */
