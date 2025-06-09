@@ -300,11 +300,12 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr,
 		return false;
 	}
 
-	/* fault된 가상 주소를 페이지 경계로 반올림 */
+	/* fault된 가상 주소를 페이지 경계로 반올림 / 주소가 속한 페이지의 첫 부분 */
 	void *fault_page = pg_round_down(addr);
 
 	/* RSP 결정: user 모드면 f->rsp, kernel 모드면 저장해 둔 user_rsp_saved */
 	void *rsp = user ? f->rsp : thread_current()->rsp_stack;
+
 	/* spt에 예약된(매핑은 안되어 있는 : not_present)
 		uninit 페이지가 있으면 물리 메모리로 올리기 */
 	if (not_present)
@@ -312,24 +313,29 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr,
 		page = spt_find_page(spt, fault_page);
 		if (page == NULL)
 		{
-			void *stack_bottom = thread_current()->stack_bottom;
 			/* 기존 페이지가 없으면 스택 확장 조건 검사 */
-			if (addr < USER_STACK											  /* 스택 영역 이내 */
+			if (addr < USER_STACK											  /* 유저 스택 영역 이내 */
 				&& (uintptr_t)USER_STACK - (uintptr_t)fault_page <= (1 << 20) /* 1MB 제한 */
-				&& fault_page + PGSIZE == stack_bottom)						  /* 기존에 할당된 스택 최하단(stack_bottom) 바로 아래(fault_page + PGSIZE)인지 검사 */
-			//&& (uintptr_t)addr >= (uintptr_t)rsp - 32					  /* rsp-32 이내 */
-			//&& ((uintptr_t)fault_page < (uintptr_t)rsp))				  /* 이미 할당된 스택 영역 제외 */
+				&& (uintptr_t)addr >= (uintptr_t)rsp - 32 && (uintptr_t)fault_page + PGSIZE >= (uintptr_t)rsp - 32)
 			{
-				/* 스택 확장 시도 */
-				vm_stack_growth(fault_page);
-
-				/* 확장 후 최하단 경계 갱신 */
-				thread_current()->stack_bottom = fault_page;
+				/* stack_bottom 에서 fault_page 까지 한 페이지만큼씩 순차 확장 */
+				void *stack_bottom = thread_current()->stack_bottom;
+				while (stack_bottom > fault_page)
+				{
+					void *next_page = stack_bottom - PGSIZE;
+					/* 1MB 한도 재검사 (안정성) */
+					if ((uintptr_t)USER_STACK - (uintptr_t)next_page > (1 << 20))
+						break;
+					/* 스택 확장 시도 */
+					vm_stack_growth(next_page);
+					stack_bottom = next_page;
+					/* 확장 후 최하단 경계 갱신 */
+					thread_current()->stack_bottom = fault_page;
+				}
 			}
 			/* SPT에 새 페이지가 등록되었으므로 다시 찾기 */
 			page = spt_find_page(spt, fault_page);
 		}
-
 		/* page가 존재하면 쓰기 권한 검사 후 claim */
 		if (page != NULL)
 		{
@@ -337,9 +343,9 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr,
 				return false;
 			return vm_do_claim_page(page);
 		}
-	}
 
-	return false;
+		return false;
+	}
 }
 
 /* Free the page.

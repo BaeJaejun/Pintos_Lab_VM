@@ -77,6 +77,9 @@ void syscall_handler(struct intr_frame *f UNUSED)
 	// printf("system call!\n");
 	// thread_exit();
 
+	/* Project3 VM : stack growth를 위한 추가 */
+	thread_current()->rsp_stack = f->rsp;
+
 	int syscall_num = (int)f->R.rax;
 
 	switch (syscall_num)

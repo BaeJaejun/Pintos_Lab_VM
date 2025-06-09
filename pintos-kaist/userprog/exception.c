@@ -145,6 +145,10 @@ page_fault(struct intr_frame *f)
 
 #ifdef VM
 	/* For project 3 and later. */
+	/* 유저 모드 폴트일 때만 저장 */
+	if (user)
+		thread_current()->rsp_stack = f->rsp;
+
 	if (vm_try_handle_fault(f, fault_addr, user, write, not_present))
 		return;
 #endif
