@@ -315,8 +315,11 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr,
 		{
 			/* 기존 페이지가 없으면 스택 확장 조건 검사 */
 			if (addr < USER_STACK											  /* 유저 스택 영역 이내 */
-				&& (uintptr_t)USER_STACK - (uintptr_t)fault_page <= (1 << 20) /* 1MB 제한 */
-				&& (uintptr_t)addr >= (uintptr_t)rsp - 32 && (uintptr_t)fault_page + PGSIZE >= (uintptr_t)rsp - 32)
+				&& (uintptr_t)USER_STACK - (uintptr_t)fault_page <= (1 << 20) /* 최대 스택 1MB 제한 */
+				/* 실제 접근 바이트(addr)가 현재 스택 포인터(rsp)에서 최대 32바이트 위에 있는가? */
+				&& (uintptr_t)addr >= (uintptr_t)rsp - 32
+				/* 페이지 단위로 보면 이 페이지 또한 스택 근처에 걸쳐 있어야 확장 */
+				&& (uintptr_t)fault_page + PGSIZE >= (uintptr_t)rsp - 32)
 			{
 				/* stack_bottom 에서 fault_page 까지 한 페이지만큼씩 순차 확장 */
 				void *stack_bottom = thread_current()->stack_bottom;
