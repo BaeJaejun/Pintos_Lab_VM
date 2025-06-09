@@ -296,27 +296,40 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr,
 
 	/* fault된 가상 주소를 페이지 경계로 반올림 */
 	void *fault_page = pg_round_down(addr);
-	void *rsp_stack = f->rsp;
+	void *rsp_stack = user ? f->rsp : thread_current()->rsp_stack;
 
 	/* spt에 예약된(매핑은 안되어 있는 : not_present)
 			uninit 페이지가 있으면 물리 메모리로 올리기 */
 	if (not_present)
 	{
-		if (!vm_claim_page(fault_page)) // vm_claim_page 실패 시 스택 확장 검사 실행
+		page = spt_find_page(spt, fault_page);
+		if (page == NULL)
 		{
 			/* rsp바로 밑에 있는가? / 확장후 스택 크기가 1MB를 넘지 않는가? / 유저 스택 범위에 속하는 가? */
-			if (rsp_stack - 32 <= addr && USER_STACK - 0x100000 <= fault_page && fault_page <= USER_STACK)
+			if (rsp_stack - 32 <= addr && USER_STACK - (uintptr_t)fault_page <= (1 << 20) && addr < USER_STACK)
 			{
-				/* 현재 쓰레드의 stack을 한 페이지 만큼 늘리기 */
-				vm_stack_growth(thread_current()->stack_bottom - PGSIZE);
-				return true;
+				void *stack_bottom = thread_current()->stack_bottom;
+				while (stack_bottom > fault_page)
+				{
+					void *next_page = stack_bottom - PGSIZE;
+					if ((uintptr_t)USER_STACK - (uintptr_t)next_page > (1 << 20))
+						break;
+					vm_stack_growth(next_page);
+					stack_bottom = next_page;
+					thread_current()->stack_bottom = fault_page;
+				}
 			}
-			return false;
+			page = spt_find_page(spt, fault_page);
 		}
-		else
-			return true;
+		/* page가 존재하면 쓰기 권한 검사 후 claim */
+		if (page != NULL)
+		{
+			if (write && !page->writable)
+				return false;
+			return vm_do_claim_page(page);
+		}
+		return false;
 	}
-	return false;
 }
 
 /* Free the page.
