@@ -42,6 +42,10 @@ int sys_dup2(int oldfd, int newfd);
 static int allocate_fd(struct file *f);
 static void free_fd(int fd);
 
+/* mmap을 위한 함수 선언 */
+void *sys_mmap(void *addr, size_t length, int writable, int fd, off_t offset);
+void sys_munmap(void *addr);
+
 /* System call.
  *
  * Previously system call services was handled by the interrupt handler
@@ -282,6 +286,22 @@ void syscall_handler(struct intr_frame *f UNUSED)
 		f->R.rax = sys_dup2(oldfd, newfd);
 		break;
 	}
+	case SYS_MMAP:
+	{
+		void *addr = (void *)f->R.rdi;
+		size_t len = (size_t)f->R.rsi;
+		int writable = (int)f->R.rdx;
+		int fd = (int)f->R.r10;
+		off_t offset = (off_t)f->R.r8;
+		f->R.rax = (uint64_t)sys_mmap(addr, len, writable, fd, offset);
+		break;
+	}
+	case SYS_MUNMAP:
+	{
+		void *addr = (void *)f->R.rdi;
+		sys_munmap(addr);
+		break;
+	}
 	default:
 		sys_exit(-1);
 	}
@@ -303,8 +323,8 @@ void check_user_address(const void *uaddr)
 #else
 	// project 3
 	// spt 매핑 여부 검사 : spt_find_page() == NULL -> exit()
-	// todo : 검사 조건 수정 필요합니닷
-	if (!uaddr || !is_user_vaddr(uaddr) || spt_find_page(&thread_current()->spt, uaddr) == NULL)
+	// todo : 검사 조건 수정 필요합니다 -> 제거
+	if (!uaddr || !is_user_vaddr(uaddr))
 	{
 		sys_exit(-1);
 	}
@@ -439,4 +459,14 @@ static void free_fd(int fd)
 	cur->fd_table[fd] = NULL;
 	if (fd < cur->next_fd)
 		cur->next_fd = fd;
+}
+
+void *sys_mmap(void *addr, size_t length, int writable, int fd, off_t offset)
+{
+	struct file *f = &thread_current()->fd_table[fd];
+	return do_mmap(addr, length, writable, f, offset);
+}
+void sys_munmap(void *addr)
+{
+	do_munmap(addr);
 }

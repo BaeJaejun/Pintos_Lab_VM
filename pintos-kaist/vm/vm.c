@@ -346,9 +346,20 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr,
 				return false;
 			return vm_do_claim_page(page);
 		}
-
 		return false;
 	}
+
+	/* 3이미 매핑된(present) 페이지에 대한 권한 검사 */
+	page = spt_find_page(spt, fault_page);
+	if (page != NULL)
+	{
+		if (write && !page->writable)
+			return false;
+		return true;
+	}
+
+	/* 위 모든 경우 아니면 실패 */
+	return false;
 }
 
 /* Free the page.
@@ -455,15 +466,18 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst,
 			if (!vm_alloc_page(type, va, writable))
 				return false;
 
-			/* 물리 프레임 연결 */
-			if (!vm_claim_page(va))
-				return false;
+			if (src_page->frame)
+			{
+				/* 물리 프레임 연결 */
+				if (!vm_claim_page(va))
+					return false;
 
-			/* 실제 물리 프레임 할당을 위해 자식 page 구조체를 찾는다 */
-			struct page *dst_page = spt_find_page(dst, va);
+				/* 실제 물리 프레임 할당을 위해 자식 page 구조체를 찾는다 */
+				struct page *dst_page = spt_find_page(dst, va);
 
-			/* 부모 프레임에서 자식 프레임으로 내용 복사 */
-			memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
+				/* 부모 프레임에서 자식 프레임으로 내용 복사 */
+				memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
+			}
 		}
 	}
 	return true;

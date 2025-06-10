@@ -565,6 +565,9 @@ init_thread(struct thread *t, const char *name, int priority)
 
 	t->fd_table = NULL;
 
+	/* mmap 리스트 초기화 */
+	list_init(&t->mmap_list);
+
 	/* 스레드 등록 코드 추가
 	 allelem은 struct thread에 있어야 함
 	*/

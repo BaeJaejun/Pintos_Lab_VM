@@ -100,7 +100,7 @@ void file_close(struct file *file)
 	if (file == &console_in || file == &console_out)
 		return;
 
-	lock_acquire(&filesys_lock);
+	// lock_acquire(&filesys_lock);
 
 	/* 먼저 참조 카운트만 감소 */
 	file->ref_cnt--;
@@ -113,7 +113,7 @@ void file_close(struct file *file)
 		free(file);
 	}
 
-	lock_release(&filesys_lock);
+	// lock_release(&filesys_lock);
 }
 
 /* Returns the inode encapsulated by FILE. */
