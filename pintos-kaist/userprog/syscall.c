@@ -458,12 +458,14 @@ static void free_fd(int fd)
 
 void *mmap(void *addr, size_t length, int writable, int fd, off_t offset)
 {
-	check_user_address(addr);
 
 	if (fd < 0 || fd >= MAX_FD || thread_current()->fd_table[fd] == NULL)
 		return NULL;
 
 	struct file *file = thread_current()->fd_table[fd];
+	if (file == NULL)
+		return NULL;
+
 	return do_mmap(addr, length, writable, file, offset);
 }
 
