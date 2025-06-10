@@ -271,6 +271,8 @@ vm_stack_growth(void *addr)
 	*/
 	void *upage = pg_round_down(addr);
 	vm_alloc_page(VM_ANON, upage, true);
+	struct page *page = spt_find_page(&thread_current()->spt, upage);
+	vm_do_claim_page(page);
 }
 
 /* Handle the fault on write_protected page */
@@ -305,6 +307,7 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr,
 
 	/* RSP 결정: user 모드면 f->rsp, kernel 모드면 저장해 둔 user_rsp_saved */
 	void *rsp = user ? f->rsp : thread_current()->rsp_stack;
+	// void *rsp = f->rsp;
 
 	/* spt에 예약된(매핑은 안되어 있는 : not_present)
 		uninit 페이지가 있으면 물리 메모리로 올리기 */
@@ -335,9 +338,12 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr,
 					/* 확장 후 최하단 경계 갱신 */
 					thread_current()->stack_bottom = fault_page;
 				}
+				return true;
 			}
+
 			/* SPT에 새 페이지가 등록되었으므로 다시 찾기 */
-			page = spt_find_page(spt, fault_page);
+			// page = spt_find_page(spt, fault_page);
+			return false;
 		}
 		/* page가 존재하면 쓰기 권한 검사 후 claim */
 		if (page != NULL)
@@ -455,15 +461,19 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst,
 			if (!vm_alloc_page(type, va, writable))
 				return false;
 
-			/* 물리 프레임 연결 */
-			if (!vm_claim_page(va))
-				return false;
+			/* 부모(src_page)에 물리 프레임이 이미 올라가 있는 경우(없으면 복사할 것이 없으니 바로 return true) */
+			if (src_page->frame)
+			{
+				/* 물리 프레임 연결 */
+				if (!vm_claim_page(va))
+					return false;
 
-			/* 실제 물리 프레임 할당을 위해 자식 page 구조체를 찾는다 */
-			struct page *dst_page = spt_find_page(dst, va);
+				/* 실제 물리 프레임 할당을 위해 자식 page 구조체를 찾는다 */
+				struct page *dst_page = spt_find_page(dst, va);
 
-			/* 부모 프레임에서 자식 프레임으로 내용 복사 */
-			memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
+				/* 부모 프레임에서 자식 프레임으로 내용 복사 */
+				memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
+			}
 		}
 	}
 	return true;

@@ -42,6 +42,8 @@ int sys_dup2(int oldfd, int newfd);
 static int allocate_fd(struct file *f);
 static void free_fd(int fd);
 
+void *mmap(void *addr, size_t length, int writable, int fd, off_t offset);
+void munmap(void *addr);
 /* System call.
  *
  * Previously system call services was handled by the interrupt handler
@@ -282,6 +284,19 @@ void syscall_handler(struct intr_frame *f UNUSED)
 		f->R.rax = sys_dup2(oldfd, newfd);
 		break;
 	}
+
+	case SYS_MMAP:
+	{
+		f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+		break;
+	}
+
+	case SYS_MUNMAP:
+	{
+		munmap(f->R.rdi);
+		break;
+	}
+
 	default:
 		sys_exit(-1);
 	}
@@ -304,7 +319,7 @@ void check_user_address(const void *uaddr)
 	// project 3
 	// spt 매핑 여부 검사 : spt_find_page() == NULL -> exit()
 	// todo : 검사 조건 수정 필요합니닷
-	if (!uaddr || !is_user_vaddr(uaddr) || spt_find_page(&thread_current()->spt, uaddr) == NULL)
+	if (!uaddr || !is_user_vaddr(uaddr))
 	{
 		sys_exit(-1);
 	}
@@ -439,4 +454,23 @@ static void free_fd(int fd)
 	cur->fd_table[fd] = NULL;
 	if (fd < cur->next_fd)
 		cur->next_fd = fd;
+}
+
+void *mmap(void *addr, size_t length, int writable, int fd, off_t offset)
+{
+
+	if (fd < 0 || fd >= MAX_FD || thread_current()->fd_table[fd] == NULL)
+		return NULL;
+
+	struct file *file = thread_current()->fd_table[fd];
+	if (file == NULL)
+		return NULL;
+
+	return do_mmap(addr, length, writable, file, offset);
+}
+
+void munmap(void *addr)
+{
+	check_user_address(addr);
+	do_munmap(addr);
 }
