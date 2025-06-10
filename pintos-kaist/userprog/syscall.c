@@ -392,11 +392,26 @@ void sys_halt(void)
 int sys_read(int fd, void *buffer, unsigned size)
 {
 	int ret;
+
+	// /* 1) 쓰기 권한 검사 */
+	// for (unsigned off = 0; off < size; off += PGSIZE)
+	// {
+	// 	void *addr = pg_round_down((uint8_t *)buffer + off);
+	// 	struct page *p = spt_find_page(&thread_current()->spt, addr);
+	// 	if (p == NULL || !p->writable)
+	// 		sys_exit(-1); /* 잘못된 접근이면 즉시 종료 */
+	// }
+
 	// 1) 파일 디스크립터 테이블에 매핑된 파일이 있으면,
 	//    무조건 그 파일로 쓰기 (dup2로 덮어쓴 stdin 포함)
 	// 표준 입력 처리는 file_read에서 했음
 	if (fd >= 0 && fd < MAX_FD && thread_current()->fd_table[fd])
 	{
+		struct page *current_page = spt_find_page(&thread_current()->spt, buffer);
+		if (!current_page->writable)
+		{
+			sys_exit(-1);
+		}
 		ret = file_read(thread_current()->fd_table[fd], buffer, size);
 	}
 	else

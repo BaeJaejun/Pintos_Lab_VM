@@ -149,6 +149,15 @@ page_fault(struct intr_frame *f)
 	if (user)
 		thread_current()->rsp_stack = f->rsp;
 
+	/* (4) 읽기 전용 페이지에 대한 쓰기 시도 감지 */
+	if (!not_present && write)
+	{
+		void *page_base = pg_round_down(fault_addr);
+		struct page *p = spt_find_page(&thread_current()->spt, page_base);
+		if (p != NULL && !p->writable)
+			sys_exit(-1);
+	}
+
 	if (vm_try_handle_fault(f, fault_addr, user, write, not_present))
 		return;
 #endif
