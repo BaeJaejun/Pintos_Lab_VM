@@ -158,12 +158,12 @@ page_fault(struct intr_frame *f)
 
 	/* 유저 모드에서의 페이지 폴트라면, 즉시 종료 */
 	/* ifdef VM 아래로 이동 */
-	if (user)
-	{
-		/* sys_exit()는 프로세스를 exit(-1)하고 thread_exit까지 해 줍니다 */
-		sys_exit(-1);
-		NOT_REACHED();
-	}
+	// if (user)
+	// {
+	/* sys_exit()는 프로세스를 exit(-1)하고 thread_exit까지 해 줍니다 */
+	sys_exit(-1);
+	// NOT_REACHED();
+	//}
 
 	/* If the fault is true fault, show info and exit. */
 	printf("Page fault at %p: %s error %s page in %s context.\n",
@@ -171,5 +171,6 @@ page_fault(struct intr_frame *f)
 		   not_present ? "not present" : "rights violation",
 		   write ? "writing" : "reading",
 		   user ? "user" : "kernel");
+
 	kill(f);
 }

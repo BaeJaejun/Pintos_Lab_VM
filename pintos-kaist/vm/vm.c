@@ -271,6 +271,8 @@ vm_stack_growth(void *addr)
 	*/
 	void *upage = pg_round_down(addr);
 	vm_alloc_page(VM_ANON, upage, true);
+	struct page *page = spt_find_page(&thread_current()->spt, upage);
+	vm_do_claim_page(page);
 }
 
 /* Handle the fault on write_protected page */
@@ -336,9 +338,12 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr,
 					/* 확장 후 최하단 경계 갱신 */
 					thread_current()->stack_bottom = fault_page;
 				}
+				return true;
 			}
+
 			/* SPT에 새 페이지가 등록되었으므로 다시 찾기 */
-			page = spt_find_page(spt, fault_page);
+			// page = spt_find_page(spt, fault_page);
+			return false;
 		}
 		/* page가 존재하면 쓰기 권한 검사 후 claim */
 		if (page != NULL)
