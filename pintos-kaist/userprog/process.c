@@ -379,6 +379,57 @@ void process_exit(void)
 		/* 1) 종료 메시지 출력 */
 		printf("%s: exit(%d)\n", curr->name, curr->exit_status);
 
+#ifdef VM
+		/* 커널 스레드가 아닌, 사용자 프로세스 페이지만 */
+		if (curr->pml4 != NULL) /* 또는 SPT가 초기화된 스레드만 */
+		{
+			/* 1) SPT 해시 전체 순회하며 file-backed 페이지만 골라 do_munmap 호출 */
+			void **starts = NULL;
+			size_t nstarts = 0;
+
+			struct hash_iterator hi;
+			hash_first(&hi, &curr->spt.spt_hash);
+			while (hash_next(&hi))
+			{
+				struct page *p = hash_entry(hash_cur(&hi), struct page, hash_elem);
+
+				/* 2) 파일 매핑된 페이지만 처리 (VM_FILE 타입) */
+				if (p->operations->type == VM_FILE)
+				{
+					struct file_page *aux = p->uninit.aux;
+
+					/* 3) 매핑의 첫 페이지(start_addr)에서만 수집 */
+					if (p->va == aux->start_addr)
+					{
+						/* 4) 중복 저장 방지: 이미 수집된 주소인지 확인 */
+						bool seen = false;
+						for (size_t i = 0; i < nstarts; i++)
+							if (starts[i] == aux->start_addr)
+							{
+								seen = true;
+								break;
+							}
+
+						/* 5) 새로 발견된 시작 주소이면 배열에 추가 */
+						if (!seen)
+						{
+							void **tmp = realloc(starts, sizeof(void *) * (nstarts + 1));
+							if (!tmp)
+								break;
+							starts = tmp;
+							starts[nstarts++] = aux->start_addr;
+						}
+					}
+				}
+			}
+			/* 2) Now unmap each mapping (this mutates the hash, but it’s safe because
+		   we’re no longer iterating it) */
+			for (size_t i = 0; i < nstarts; i++)
+				do_munmap(starts[i]);
+
+			free(starts);
+		}
+#endif
 		/* 2) 부모에게 exit 상태 전달 및 sema_up() */
 		if (curr->parent_tid != TID_ERROR)
 		{
@@ -413,60 +464,6 @@ void process_exit(void)
 			}
 		}
 	}
-
-#ifdef VM
-	/* 커널 스레드가 아닌, 사용자 프로세스 페이지만 */
-	if (curr->pml4 != NULL) /* 또는 SPT가 초기화된 스레드만 */
-	{
-		/* 1) SPT 해시 전체 순회하며 file-backed 페이지만 골라 do_munmap 호출 */
-		void **starts = NULL;
-		size_t nstarts = 0;
-
-		struct hash_iterator hi;
-		hash_first(&hi, &curr->spt.spt_hash);
-		while (hash_next(&hi))
-		{
-			struct page *p = hash_entry(hash_cur(&hi), struct page, hash_elem);
-
-			/* 2) 파일 매핑된 페이지만 처리 (VM_FILE 타입) */
-			if (p->operations->type == VM_FILE)
-			{
-				struct file_page *aux = p->uninit.aux;
-
-				/* 3) 매핑의 첫 페이지(start_addr)에서만 수집 */
-				if (p->va == aux->start_addr)
-				{
-
-					/* 4) 중복 저장 방지: 이미 수집된 주소인지 확인 */
-					bool seen = false;
-					for (size_t i = 0; i < nstarts; i++)
-						if (starts[i] == aux->start_addr)
-						{
-							seen = true;
-							break;
-						}
-
-					/* 5) 새로 발견된 시작 주소이면 배열에 추가 */
-					if (!seen)
-					{
-						void **tmp = realloc(starts, sizeof(void *) * (nstarts + 1));
-						if (tmp)
-							starts = tmp;
-						else
-							break; /* OOM—give up early */
-						starts[nstarts++] = aux->start_addr;
-					}
-				}
-			}
-		}
-		/* 2) Now unmap each mapping (this mutates the hash, but it’s safe because
-	   we’re no longer iterating it) */
-		for (size_t i = 0; i < nstarts; i++)
-			do_munmap(starts[i]);
-
-		free(starts);
-	}
-#endif
 	process_cleanup();
 }
 

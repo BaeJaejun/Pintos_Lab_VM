@@ -141,7 +141,7 @@ do_mmap(void *addr, size_t length, int writable, struct file *file, off_t offset
 		aux->zero_bytes = page_zero_bytes;
 		aux->writable = writable;
 
-		aux->start_addr = addr;
+		aux->start_addr = start_addr;
 		aux->length = length;
 
 		/* SPT 예약: lazy_load_segment 으로 나중에 실제 로드 */
