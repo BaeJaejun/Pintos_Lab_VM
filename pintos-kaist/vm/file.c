@@ -60,7 +60,7 @@ lazy_load_mmap(struct page *page, void *aux)
 	/* 3) 나머지 부분(zero_bytes)만큼 0으로 채움 */
 	memset(kva + read_bytes, 0, zero_bytes);
 
-	free(info);
+	// free(info);
 	return true;
 }
 
@@ -91,11 +91,13 @@ void *
 do_mmap(void *addr, size_t length, int writable, struct file *file, off_t offset)
 {
 	/* 인자 유효성 검사 */
-	if (addr == NULL || pg_ofs(addr) != 0)
+	if (addr == NULL || pg_ofs(addr) != 0 || !is_user_vaddr(addr))
 		return NULL;
 	if (length == 0)
 		return NULL;
 	if (file == NULL || file_length(file) == 0)
+		return NULL;
+	if (offset < 0 || file_length(file) < offset || offset % PGSIZE != 0)
 		return NULL;
 
 	/* 나중에 do_mmap 성공했을때 반환할 시작 주소 저장*/

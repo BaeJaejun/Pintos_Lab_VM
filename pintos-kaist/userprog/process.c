@@ -870,7 +870,7 @@ lazy_load_segment(struct page *page, void *aux)
 	/* 3) 나머지 부분(zero_bytes)만큼 0으로 채움 */
 	memset(kva + read_bytes, 0, zero_bytes);
 
-	free(info);
+	// free(info);
 	return true;
 }
 
