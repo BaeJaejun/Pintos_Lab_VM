@@ -141,6 +141,9 @@ do_mmap(void *addr, size_t length, int writable, struct file *file, off_t offset
 		aux->zero_bytes = page_zero_bytes;
 		aux->writable = writable;
 
+		aux->start_addr = addr;
+		aux->length = length;
+
 		/* SPT 예약: lazy_load_segment 으로 나중에 실제 로드 */
 		if (!vm_alloc_page_with_initializer(VM_FILE, addr,
 											writable, lazy_load_mmap, aux))
@@ -164,14 +167,23 @@ do_mmap(void *addr, size_t length, int writable, struct file *file, off_t offset
 /* Do the munmap */
 void do_munmap(void *addr)
 {
+	struct thread *cur = thread_current();
+
 	addr = pg_round_down(addr);
+
+	/* 첫 페이지에서 file 핸들 꺼내기 */
+	struct page *page = spt_find_page(&cur->spt, addr);
+	if (!page)
+		return;
+	struct file_page *first_aux = (struct file_page *)page->uninit.aux;
+	struct file *file = first_aux->file;
 
 	while (true)
 	{
 		/* 매핑 정보 조회*/
 		struct page *page = spt_find_page(&thread_current()->spt, addr);
 		if (page == NULL)
-			return;
+			break;
 
 		struct file_page *aux = (struct file_page *)page->uninit.aux;
 
@@ -179,12 +191,26 @@ void do_munmap(void *addr)
 		if (pml4_is_dirty(thread_current()->pml4, page->va)) //	pml4_is_dirty함수는 페이지의 dirty bit이 1이면 true를, 0이면 false를 리턴한다.
 		{
 			/* 물리 프레임에 변경된 데이터를 다시 디스크 파일에 업데이트해주는 함수. buffer에 있는 데이터를 size만큼, file의 file_ofs부터 써준다 */
-			file_write_at(aux->file, addr, aux->read_bytes, aux->offset);
+			file_write_at(aux->file, page->frame->kva, aux->read_bytes, aux->offset);
 			/* 인자로 받은 dirty의 값이 1이면 page의 dirty bit을 1로, 0이면 0으로 변경해준다. */
 			pml4_set_dirty(thread_current()->pml4, page->va, 0);
 		}
 		/* pml4 페이지 안에서 va와 매핑된거 지우는 함수 */
 		pml4_clear_page(thread_current()->pml4, page->va);
+
+		/* c) physical frame 해제 */
+		if (page->frame)
+		{
+			palloc_free_page(page->frame->kva);
+			free(page->frame);
+		}
+
+		/* d) SPT 엔트리 & aux 해제 */
+		spt_remove_page(&cur->spt, page);
+		free(aux);
+
 		addr += PGSIZE;
 	}
+	/* 4) 파일 닫기 */
+	file_close(file);
 }

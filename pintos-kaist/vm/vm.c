@@ -455,17 +455,43 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst,
 												init, aux))
 				return false;
 		}
-		else
+		else if (type == VM_ANON)
 		{
-			/* VM_ANON or VM_FILE 일때 메모리 할당 -> 페이지 요청 -> 메모리 복사 */
-			if (!vm_alloc_page(type, va, writable))
+			/* VM_ANON 일때 메모리 할당 -> 페이지 요청 -> 메모리 복사 */
+			if (!vm_alloc_page_with_initializer(type, va, writable, anon_initializer, NULL))
 				return false;
 
 			/* 부모(src_page)에 물리 프레임이 이미 올라가 있는 경우(없으면 복사할 것이 없으니 바로 return true) */
 			if (src_page->frame)
 			{
 				/* 물리 프레임 연결 */
-				if (!vm_claim_page(va))
+				if (!vm_do_claim_page(spt_find_page(dst, va)))
+					return false;
+
+				/* 실제 물리 프레임 할당을 위해 자식 page 구조체를 찾는다 */
+				struct page *dst_page = spt_find_page(dst, va);
+
+				/* 부모 프레임에서 자식 프레임으로 내용 복사 */
+				memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
+			}
+		}
+		else if (type == VM_FILE)
+		{
+			struct file_page *f = &src_page->file;
+			struct file_page *aux = malloc(sizeof(*aux));
+			if (!aux)
+				return false;
+
+			*aux = *f;
+
+			if (!vm_alloc_page_with_initializer(type, va, writable, file_backed_initializer, aux))
+				return false;
+
+			/* 부모(src_page)에 물리 프레임이 이미 올라가 있는 경우(없으면 복사할 것이 없으니 바로 return true) */
+			if (src_page->frame)
+			{
+				/* 물리 프레임 연결 */
+				if (!vm_do_claim_page(spt_find_page(dst, va)))
 					return false;
 
 				/* 실제 물리 프레임 할당을 위해 자식 page 구조체를 찾는다 */
@@ -476,6 +502,7 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst,
 			}
 		}
 	}
+
 	return true;
 }
 

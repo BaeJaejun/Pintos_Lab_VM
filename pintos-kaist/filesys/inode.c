@@ -176,13 +176,13 @@ void inode_close(struct inode *inode)
 	if (inode == NULL)
 		return;
 
-	// lock_acquire(&inode->inode_lock);
+	lock_acquire(&inode->inode_lock);
 
 	/* open_cnt 감소 후, 아직 더 열려 있으면 락만 풀고 종료 */
 	inode->open_cnt--;
 	if (inode->open_cnt > 0)
 	{
-		// lock_release(&inode->inode_lock);
+		lock_release(&inode->inode_lock);
 		return;
 	}
 
@@ -197,7 +197,7 @@ void inode_close(struct inode *inode)
 	list_remove(&inode->elem);
 
 	/* 락 해제 */
-	// lock_release(&inode->inode_lock);
+	lock_release(&inode->inode_lock);
 
 	/* 블록 해제 */
 	if (do_remove)
@@ -228,7 +228,7 @@ off_t inode_read_at(struct inode *inode, void *buffer_, off_t size, off_t offset
 	off_t bytes_read = 0;
 	uint8_t *bounce = NULL;
 
-	// lock_acquire(&inode->inode_lock);
+	lock_acquire(&inode->inode_lock);
 	while (size > 0)
 	{
 		/* Disk sector to read, starting byte offset within sector. */
@@ -269,7 +269,7 @@ off_t inode_read_at(struct inode *inode, void *buffer_, off_t size, off_t offset
 		offset += chunk_size;
 		bytes_read += chunk_size;
 	}
-	// lock_release(&inode->inode_lock);
+	lock_release(&inode->inode_lock);
 
 	free(bounce);
 
@@ -291,7 +291,7 @@ off_t inode_write_at(struct inode *inode, const void *buffer_, off_t size,
 	if (inode->deny_write_cnt)
 		return 0;
 
-	lock_acquire(&inode->inode_lock);
+	// lock_acquire(&inode->inode_lock);
 	while (size > 0)
 	{
 		/* Sector to write, starting byte offset within sector. */
@@ -339,7 +339,7 @@ off_t inode_write_at(struct inode *inode, const void *buffer_, off_t size,
 		offset += chunk_size;
 		bytes_written += chunk_size;
 	}
-	lock_release(&inode->inode_lock);
+	// lock_release(&inode->inode_lock);
 
 	free(bounce);
 
