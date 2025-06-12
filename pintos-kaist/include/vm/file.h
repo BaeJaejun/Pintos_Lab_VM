@@ -13,6 +13,9 @@ struct file_page
 	uint32_t read_bytes; /* 이 페이지에 실제로 읽어들일 바이트 수 */
 	uint32_t zero_bytes; /* 페이지의 나머지 부분(읽을 데이터 이후)을 0으로 채울 바이트 수 */
 	bool writable;		 /* 쓰기 권한 */
+
+	void *start_addr; /* 이 매핑의 시작 가상주소 */
+	size_t length;	  /* 매핑 전체 길이 (바이트) */
 };
 
 void vm_file_init(void);
