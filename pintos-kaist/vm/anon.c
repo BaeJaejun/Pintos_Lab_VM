@@ -69,6 +69,7 @@ anon_swap_in(struct page *page, void *kva)
 
 	/* 스왑 슬롯 번호 확인 */
 	int slot_number = page->anon.swap_slot;
+	// printf("swap in slot: %d\n", slot_number);
 	/* slot_number가 -1이면 스왑된적이 없다. 즉, 복훤할 데이터가 없다. */
 	if (slot_number < 0)
 		return false;
@@ -98,7 +99,7 @@ anon_swap_out(struct page *page)
 
 	/* swap_table 비트맵을 순회해서 아직 사용되지 않은(0인) 슬롯을 찾아서 1로 표시 */
 	int slot = bitmap_scan_and_flip(swap_table, 0, 1, false);
-
+	// printf("slot: %d\n", slot);
 	/* 만약 빈 슬롯이 없다면 실패(false)를 반환 */
 	if (slot == BITMAP_ERROR)
 		return false;
@@ -137,12 +138,13 @@ anon_swap_out(struct page *page)
 static void
 anon_destroy(struct page *page)
 {
-	// struct anon_page *anon_page = &page->anon;
+	struct anon_page *anon_page = &page->anon;
 
-	// /* 물리 메모리에 올라와 있는 페이지가 있으면 해제 */
-	// if (page->frame != NULL)
-	// {
-	// 	palloc_free_page(page->frame->page);
-	// 	page->frame = NULL;
-	// }
+	/* 물리 메모리에 올라와 있는 페이지가 있으면 해제 */
+	if (page->frame != NULL)
+	{
+		palloc_free_page(page->frame->kva);
+	}
+	pml4_clear_page(thread_current()->pml4, page->va);
+	free(page->frame);
 }
