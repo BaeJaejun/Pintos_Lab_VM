@@ -458,7 +458,7 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst,
 		else if (type == VM_ANON)
 		{
 			/* VM_ANON 일때 메모리 할당 -> 페이지 요청 -> 메모리 복사 */
-			if (!vm_alloc_page_with_initializer(type, va, writable, anon_initializer, NULL))
+			if (!vm_alloc_page(type, va, writable))
 				return false;
 
 			/* 부모(src_page)에 물리 프레임이 이미 올라가 있는 경우(없으면 복사할 것이 없으니 바로 return true) */
@@ -484,7 +484,7 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst,
 
 			*aux = *f;
 
-			if (!vm_alloc_page_with_initializer(type, va, writable, file_backed_initializer, aux))
+			if (!vm_alloc_page_with_initializer(type, va, writable, NULL, aux))
 				return false;
 
 			/* 부모(src_page)에 물리 프레임이 이미 올라가 있는 경우(없으면 복사할 것이 없으니 바로 return true) */
