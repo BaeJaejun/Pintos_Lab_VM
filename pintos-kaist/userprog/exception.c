@@ -149,6 +149,15 @@ page_fault(struct intr_frame *f)
 	if (user)
 		thread_current()->rsp_stack = f->rsp;
 
+	/* (4) 읽기 전용 페이지에 대한 쓰기 시도 감지 */
+	if (!not_present && write)
+	{
+		void *page_base = pg_round_down(fault_addr);
+		struct page *p = spt_find_page(&thread_current()->spt, page_base);
+		if (p != NULL && !p->writable)
+			sys_exit(-1);
+	}
+
 	if (vm_try_handle_fault(f, fault_addr, user, write, not_present))
 		return;
 #endif
@@ -158,18 +167,19 @@ page_fault(struct intr_frame *f)
 
 	/* 유저 모드에서의 페이지 폴트라면, 즉시 종료 */
 	/* ifdef VM 아래로 이동 */
-	if (user)
-	{
-		/* sys_exit()는 프로세스를 exit(-1)하고 thread_exit까지 해 줍니다 */
-		sys_exit(-1);
-		NOT_REACHED();
-	}
+	// if (user)
+	// {
+	/* sys_exit()는 프로세스를 exit(-1)하고 thread_exit까지 해 줍니다 */
 
+	// NOT_REACHED();
+	//}
+	sys_exit(-1);
 	/* If the fault is true fault, show info and exit. */
 	printf("Page fault at %p: %s error %s page in %s context.\n",
 		   fault_addr,
 		   not_present ? "not present" : "rights violation",
 		   write ? "writing" : "reading",
 		   user ? "user" : "kernel");
+
 	kill(f);
 }

@@ -153,41 +153,58 @@ bool spt_remove_page(struct supplemental_page_table *spt, struct page *page)
 static struct frame *
 vm_get_victim(void)
 {
-	// struct frame *victim = NULL;
-	/* TODO: The policy for eviction is up to you. */
-	if (list_empty(&frame_table))
-		return NULL;
+	// // struct frame *victim = NULL;
+	// /* TODO: The policy for eviction is up to you. */
+	// if (list_empty(&frame_table))
+	// 	return NULL;
 
-	/* FIFO 방식 */
-	// struct list_elem *e = list_pop_front(&frame_table);
+	// /* FIFO 방식 */
+	// // struct list_elem *e = list_pop_front(&frame_table);
+	// // victim = list_entry(e, struct frame, frame_elem);
+
+	// /* CLOCK 방식 */
+	// struct list_elem *e;
+	// struct frame *victim;
+	// for (e = list_begin(&frame_table); e != list_end(&frame_table);)
+	// {
+	// 	victim = list_entry(e, struct frame, frame_elem);
+
+	// 	if (pml4_is_accessed(thread_current()->pml4, victim->page->va))
+	// 	{
+	// 		/* 참조되었으니, second chance: accessed 비트만 0으로 내리고 뒤로 보낸다 */
+	// 		pml4_set_accessed(thread_current()->pml4, victim->page->va, false);
+	// 		e = list_remove(e); // list_next를 반환해줌
+	// 		list_push_back(&frame_table, &victim->frame_elem);
+	// 	}
+	// 	else
+	// 	{
+	// 		/* accessed 비트가 이미 0 → 이게 바로 victim */
+	// 		list_remove(e);
+	// 		return victim;
+	// 	}
+	// }
+
+	// /* 2) 위 루프에서 victim을 못 찾았다면, 리스트 앞에서 그냥 꺼낸다 (가장 오래된 것) */
+	// e = list_pop_front(&frame_table);
 	// victim = list_entry(e, struct frame, frame_elem);
+	// return victim;
 
-	/* CLOCK 방식 */
-	struct list_elem *e;
-	struct frame *victim;
-	for (e = list_begin(&frame_table); e != list_end(&frame_table);)
+	struct frame *victim = NULL;
+	/* TODO: The policy for eviction is up to you. */
+	struct thread *curr = thread_current();
+
+	// Second Chance 방식으로 결정
+	struct list_elem *e = list_begin(&frame_table);
+	for (e; e != list_end(&frame_table); e = list_next(e))
 	{
 		victim = list_entry(e, struct frame, frame_elem);
-
-		if (pml4_is_accessed(thread_current()->pml4, victim->page->va))
-		{
-			/* 참조되었으니, second chance: accessed 비트만 0으로 내리고 뒤로 보낸다 */
-			pml4_set_accessed(thread_current()->pml4, victim->page->va, false);
-			e = list_remove(e); // list_next를 반환해줌
-			list_push_back(&frame_table, &victim->frame_elem);
-		}
+		if (pml4_is_accessed(curr->pml4, victim->page->va))
+			pml4_set_accessed(curr->pml4, victim->page->va, false); // pml4가 최근에 사용됐다면 기회를 한번 더 준다.
 		else
-		{
-			/* accessed 비트가 이미 0 → 이게 바로 victim */
-			list_remove(e);
 			return victim;
-		}
 	}
 
-	/* 2) 위 루프에서 victim을 못 찾았다면, 리스트 앞에서 그냥 꺼낸다 (가장 오래된 것) */
-	e = list_pop_front(&frame_table);
-	victim = list_entry(e, struct frame, frame_elem);
-	return victim;
+	return list_entry(list_begin(&frame_table), struct frame, frame_elem);
 }
 
 /* Evict one page and return the corresponding frame.
@@ -205,7 +222,8 @@ vm_evict_frame(void)
 	/* victim이 차지하고 있는 페이지가 있다면 swap_out*/
 	if (!swap_out(victim->page))
 		return NULL;
-
+	victim->page->frame = NULL;
+	victim->page = NULL;
 	return victim;
 }
 
@@ -271,6 +289,8 @@ vm_stack_growth(void *addr)
 	*/
 	void *upage = pg_round_down(addr);
 	vm_alloc_page(VM_ANON, upage, true);
+	struct page *page = spt_find_page(&thread_current()->spt, upage);
+	vm_do_claim_page(page);
 }
 
 /* Handle the fault on write_protected page */
@@ -305,6 +325,7 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr,
 
 	/* RSP 결정: user 모드면 f->rsp, kernel 모드면 저장해 둔 user_rsp_saved */
 	void *rsp = user ? f->rsp : thread_current()->rsp_stack;
+	// void *rsp = f->rsp;
 
 	/* spt에 예약된(매핑은 안되어 있는 : not_present)
 		uninit 페이지가 있으면 물리 메모리로 올리기 */
@@ -313,6 +334,7 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr,
 		page = spt_find_page(spt, fault_page);
 		if (page == NULL)
 		{
+			// printf("page null adrs: %p\n", addr);
 			/* 기존 페이지가 없으면 스택 확장 조건 검사 */
 			if (addr < USER_STACK											  /* 유저 스택 영역 이내 */
 				&& (uintptr_t)USER_STACK - (uintptr_t)fault_page <= (1 << 20) /* 최대 스택 1MB 제한 */
@@ -321,6 +343,7 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr,
 				/* 페이지 단위로 보면 이 페이지 또한 스택 근처에 걸쳐 있어야 확장 */
 				&& (uintptr_t)fault_page + PGSIZE >= (uintptr_t)rsp - 32)
 			{
+
 				/* stack_bottom 에서 fault_page 까지 한 페이지만큼씩 순차 확장 */
 				void *stack_bottom = thread_current()->stack_bottom;
 				while (stack_bottom > fault_page)
@@ -335,9 +358,12 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr,
 					/* 확장 후 최하단 경계 갱신 */
 					thread_current()->stack_bottom = fault_page;
 				}
+				return true;
 			}
+
 			/* SPT에 새 페이지가 등록되었으므로 다시 찾기 */
-			page = spt_find_page(spt, fault_page);
+			// page = spt_find_page(spt, fault_page);
+			return false;
 		}
 		/* page가 존재하면 쓰기 권한 검사 후 claim */
 		if (page != NULL)
@@ -449,23 +475,54 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst,
 												init, aux))
 				return false;
 		}
-		else
+		else if (type == VM_ANON)
 		{
-			/* VM_ANON or VM_FILE 일때 메모리 할당 -> 페이지 요청 -> 메모리 복사 */
+			/* VM_ANON 일때 메모리 할당 -> 페이지 요청 -> 메모리 복사 */
 			if (!vm_alloc_page(type, va, writable))
 				return false;
 
-			/* 물리 프레임 연결 */
-			if (!vm_claim_page(va))
+			/* 부모(src_page)에 물리 프레임이 이미 올라가 있는 경우(없으면 복사할 것이 없으니 바로 return true) */
+			if (src_page->frame)
+			{
+				/* 물리 프레임 연결 */
+				if (!vm_do_claim_page(spt_find_page(dst, va)))
+					return false;
+
+				/* 실제 물리 프레임 할당을 위해 자식 page 구조체를 찾는다 */
+				struct page *dst_page = spt_find_page(dst, va);
+
+				/* 부모 프레임에서 자식 프레임으로 내용 복사 */
+				memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
+			}
+		}
+		else if (type == VM_FILE)
+		{
+			struct file_page *f = &src_page->file;
+			struct file_page *aux = malloc(sizeof(*aux));
+			if (!aux)
 				return false;
 
-			/* 실제 물리 프레임 할당을 위해 자식 page 구조체를 찾는다 */
-			struct page *dst_page = spt_find_page(dst, va);
+			*aux = *f;
 
-			/* 부모 프레임에서 자식 프레임으로 내용 복사 */
-			memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
+			if (!vm_alloc_page_with_initializer(type, va, writable, NULL, aux))
+				return false;
+
+			/* 부모(src_page)에 물리 프레임이 이미 올라가 있는 경우(없으면 복사할 것이 없으니 바로 return true) */
+			if (src_page->frame)
+			{
+				/* 물리 프레임 연결 */
+				if (!vm_do_claim_page(spt_find_page(dst, va)))
+					return false;
+
+				/* 실제 물리 프레임 할당을 위해 자식 page 구조체를 찾는다 */
+				struct page *dst_page = spt_find_page(dst, va);
+
+				/* 부모 프레임에서 자식 프레임으로 내용 복사 */
+				memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
+			}
 		}
 	}
+
 	return true;
 }
 
@@ -474,7 +531,10 @@ void hash_page_destroy(struct hash_elem *e, void *aux)
 {
 	struct page *p = hash_entry(e, struct page, hash_elem);
 	/* 이 한 줄로 프레임 해제, 스왑 슬롯 반환, aux free, 그리고 free(p)까지 수행 */
-	vm_dealloc_page(p);
+	// vm_dealloc_page(p);
+
+	destroy(p);
+	free(p);
 }
 
 /* Free the resource hold by the supplemental page table */
